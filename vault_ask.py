@@ -90,9 +90,10 @@ def obsidian_link(vault: Path, path: Path) -> str:
     return f"[[{rel.with_suffix('')}|{path.stem}]]"
 
 
-def note_excerpt(path: Path, terms: list[str], max_chars: int = 650) -> str:
-    """Query-focused excerpt: headings + lines mentioning a term (notes can be
-    long; we only feed the model what's relevant)."""
+def note_excerpt(path: Path, terms: list[str], max_chars: int = 650, context: int = 1) -> str:
+    """Query-focused excerpt: headings + lines mentioning a term, plus a small
+    context window around each match (notes can be long, and a matched keyword's
+    answer often sits on the neighbouring wrapped line)."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -101,16 +102,19 @@ def note_excerpt(path: Path, terms: list[str], max_chars: int = 650) -> str:
         end = text.find("\n---\n", 4)
         if end != -1:
             text = text[end + 5:]
-    kept: list[str] = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    keep_idx: set[int] = set()
+    for i, line in enumerate(lines):
         stripped = line.strip()
         if not stripped:
             continue
         norm = normalize(line)
         if stripped.startswith("#") or any(term in norm for term in terms):
-            kept.append(stripped)
+            for j in range(max(0, i - context), min(len(lines), i + context + 1)):
+                keep_idx.add(j)
+    kept = [lines[i].strip() for i in sorted(keep_idx) if lines[i].strip()]
     body = "\n".join(kept) if kept else "\n".join(
-        l.strip() for l in text.splitlines() if l.strip()
+        l.strip() for l in lines if l.strip()
     )
     return body[:max_chars]
 

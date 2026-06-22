@@ -79,6 +79,17 @@ class TestCandidateSelection(unittest.TestCase):
     def test_no_terms_returns_empty(self):
         self.assertEqual(vault_ask.candidate_notes(self.tmp, "what is the", limit=5), [])
 
+    def test_excerpt_keeps_answer_on_adjacent_line(self):
+        # The keyword and the actual answer often sit on neighbouring (wrapped)
+        # lines; the context window must keep both.
+        note = self.tmp / "n.md"
+        note.write_text(
+            "# Heading\nThe chosen value is 49 EUR\nfor the pricing plan.\n",
+            encoding="utf-8")
+        excerpt = vault_ask.note_excerpt(note, ["pricing"])
+        self.assertIn("49 EUR", excerpt)        # answer line (no keyword) kept via context
+        self.assertIn("pricing", excerpt)
+
 
 class TestAsk(unittest.TestCase):
     def setUp(self):
