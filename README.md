@@ -1,5 +1,10 @@
 # vault-ask
 
+[![CI](https://github.com/guillaumevele/vault-ask/actions/workflows/ci.yml/badge.svg)](https://github.com/guillaumevele/vault-ask/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-zero-success.svg)](pyproject.toml)
+
 **Ask your Obsidian vault. Get cited answers. Never hallucinate.**
 
 A tiny (~300-line, dependency-free) grounded question-answering tool over a folder
@@ -59,14 +64,19 @@ Requires **Python 3.9+** and **[ripgrep](https://github.com/BurntSushi/ripgrep)*
 (`rg`) on your `PATH`.
 
 ```bash
-git clone https://github.com/<you>/vault-ask.git
-cd vault-ask
-chmod +x vault_ask.py
-# optional: put it on your PATH
-ln -s "$PWD/vault_ask.py" ~/.local/bin/vault-ask
+# pip (installs the `vault-ask` command)
+pip install git+https://github.com/guillaumevele/vault-ask.git
 ```
 
-No pip install, no dependencies beyond the standard library.
+Or run it as a single file, no install:
+
+```bash
+git clone https://github.com/guillaumevele/vault-ask.git
+cd vault-ask
+python3 vault_ask.py "your question"
+```
+
+No dependencies beyond the Python standard library and ripgrep.
 
 ## Configure your LLM
 
