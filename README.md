@@ -109,12 +109,24 @@ vault-ask --vault ~/notes "when is the contract renewal?"
 vault-ask --limit 8 --json "summarize my pricing decisions"
 ```
 
+No LLM? Use `--sources-only` to just rank the most relevant notes — a smart grep
+for your vault that needs no model at all:
+
+```bash
+vault-ask --sources-only "pricing model"
+# Most relevant notes for: pricing model
+# - [[Decisions/2026-pricing|2026-pricing]]
+# - [[Meetings/2026-01-pricing-review|2026-01-pricing-review]]
+```
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--vault` | `$OBSIDIAN_VAULT` or `.` | path to the vault |
 | `--limit` | `5` | max notes to consult |
 | `--llm` | `$VAULT_ASK_LLM` | LLM command (overrides env) |
+| `--sources-only` | off | rank relevant notes, no LLM call |
 | `--json` | off | raw structured output |
+| `--version` | | print version |
 
 ## What it's good at — and what it isn't
 

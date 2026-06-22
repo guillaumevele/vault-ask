@@ -33,10 +33,13 @@ import math
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import unicodedata
 from pathlib import Path
+
+__version__ = "0.1.1"
 
 REFUSAL = "No note in the vault answers this question."
 
@@ -255,18 +258,37 @@ def run_llm(prompt: str, *, command: str | None = None, timeout_s: int = 120) ->
     return out or None
 
 
-def ask(vault: Path, query: str, limit: int = 5, command: str | None = None) -> dict:
+def ripgrep_available() -> bool:
+    return shutil.which("rg") is not None
+
+
+def ask(
+    vault: Path,
+    query: str,
+    limit: int = 5,
+    command: str | None = None,
+    sources_only: bool = False,
+) -> dict:
     """Grounded Q&A over the vault. Always returns a structured result; a missing
-    LLM or zero candidates yields an honest refusal, never a fabricated answer."""
+    LLM or zero candidates yields an honest refusal, never a fabricated answer.
+    With sources_only=True, returns the ranked relevant notes and skips the LLM."""
     query = re.sub(r"\s+", " ", str(query or "").strip())
     if not query:
         return {"ok": False, "reason": "empty-query"}
+    if not ripgrep_available():
+        return {"ok": False, "reason": "ripgrep-not-found"}
     notes = candidate_notes(vault, query, limit=limit)
     result = {
         "ok": True,
         "query": query,
         "candidates": [{"title": n["title"], "link": n["link"]} for n in notes],
     }
+    if sources_only:
+        result["answer"] = None
+        result["grounded"] = False
+        result["sources"] = [n["link"] for n in notes]
+        result["mode"] = "sources-only"
+        return result
     if not notes:
         result["answer"] = REFUSAL
         result["grounded"] = False
@@ -288,16 +310,28 @@ def ask(vault: Path, query: str, limit: int = 5, command: str | None = None) -> 
 
 def format_result(result: dict) -> str:
     if not result.get("ok"):
-        return f"vault-ask: {result.get('reason', 'error')}"
+        reason = result.get("reason", "error")
+        if reason == "ripgrep-not-found":
+            return (
+                "vault-ask: ripgrep (`rg`) was not found on your PATH.\n"
+                "Install it: https://github.com/BurntSushi/ripgrep#installation"
+            )
+        if reason == "empty-query":
+            return "vault-ask: please provide a question."
+        return f"vault-ask: {reason}"
+    cands = result.get("candidates") or []
+    if result.get("mode") == "sources-only":
+        lines = [f"Most relevant notes for: {result['query']}", ""]
+        lines += [f"- {c['link']}" for c in cands] or ["(no matching notes)"]
+        return "\n".join(lines)
     lines = [f"Q: {result['query']}", ""]
     if result.get("answer"):
         lines.append(result["answer"])
     elif result.get("reason") == "no-llm":
         lines.append(
-            "(No LLM configured or it failed — set $VAULT_ASK_LLM. "
-            "Relevant notes below.)"
+            "(No LLM configured or it failed — set $VAULT_ASK_LLM, "
+            "or use --sources-only. Relevant notes below.)"
         )
-    cands = result.get("candidates") or []
     if cands:
         lines += ["", "Notes consulted:"]
         lines += [f"- {c['link']}" for c in cands]
@@ -319,13 +353,21 @@ def main(argv: list[str] | None = None) -> int:
         "--llm", default=None,
         help="LLM command (default: $VAULT_ASK_LLM). Use '{prompt}' for arg-style.",
     )
+    parser.add_argument(
+        "--sources-only", action="store_true",
+        help="just list the most relevant notes, no LLM call (a smart grep for your vault)",
+    )
     parser.add_argument("--json", action="store_true", help="output raw JSON")
+    parser.add_argument("--version", action="version", version=f"vault-ask {__version__}")
     args = parser.parse_args(argv)
 
     question = " ".join(args.question).strip()
     if not question:
         parser.error("provide a question")
-    result = ask(Path(args.vault), question, limit=args.limit, command=args.llm)
+    result = ask(
+        Path(args.vault), question,
+        limit=args.limit, command=args.llm, sources_only=args.sources_only,
+    )
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:

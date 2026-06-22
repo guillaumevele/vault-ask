@@ -134,6 +134,21 @@ class TestAsk(unittest.TestCase):
         self.assertEqual(res["reason"], "no-llm")
         self.assertTrue(res["candidates"])
 
+    def test_sources_only_skips_llm(self):
+        (self.tmp / "note.md").write_text("# Note\nZylophone budget tool.\n", encoding="utf-8")
+        with patch.object(vault_ask, "run_llm") as llm:
+            res = vault_ask.ask(self.tmp, "zylophone budget", sources_only=True)
+        llm.assert_not_called()
+        self.assertEqual(res["mode"], "sources-only")
+        self.assertTrue(res["sources"])
+        self.assertIsNone(res["answer"])
+
+    def test_missing_ripgrep_gives_clear_reason(self):
+        with patch.object(vault_ask.shutil, "which", return_value=None):
+            res = vault_ask.ask(self.tmp, "anything at all")
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["reason"], "ripgrep-not-found")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
