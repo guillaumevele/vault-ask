@@ -145,6 +145,13 @@ it refuses honestly rather than guessing.
 python3 -m unittest discover -s tests
 ```
 
+## Related
+
+[**voice-to-vault**](https://github.com/guillaumevele/voice-to-vault) is the other
+half of the loop: it routes your voice captures into the Obsidian vault that
+`vault-ask` then answers questions about. One files your thoughts, the other
+brings them back.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
