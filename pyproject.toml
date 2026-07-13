@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vault-ask"
-version = "0.1.1"
-description = "Ask your Obsidian vault, get cited answers, never hallucinate."
+version = "0.2.0"
+description = "Ask your Obsidian vault with fail-closed citation validation."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

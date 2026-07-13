@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vault-ask — Ask your Obsidian vault, get cited answers, never hallucinate.
+"""vault-ask — Citation-constrained answers over an Obsidian vault.
 
 A tiny, dependency-free grounded question-answering tool over a Markdown
 knowledge base (built for Obsidian, works on any folder of .md files).
@@ -11,8 +11,8 @@ How it works:
   3. Query-focused excerpts of the top notes are sent to your LLM with a strict
      prompt: every claim MUST cite its source note as a [[wikilink]], and if the
      excerpts don't answer the question the model MUST refuse instead of guessing.
-  4. A robust refusal check guarantees a refusal is never dressed up as a
-     sourced answer.
+  4. Output validation fails closed unless the answer contains an exact
+     citation copied from the selected source set.
 
 The LLM is whatever command you configure via $VAULT_ASK_LLM, so it works with a
 local model (Ollama), a CLI like `llm`, or any subscription CLI you already use.
@@ -39,9 +39,10 @@ import sys
 import unicodedata
 from pathlib import Path
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 REFUSAL = "No note in the vault answers this question."
+WIKILINK_RE = re.compile(r"\[\[[^\[\]\n]+\]\]")
 
 # Directories that are noise, not knowledge — skipped during candidate search.
 DEFAULT_EXCLUDED_DIRS = (".obsidian", ".trash", ".git", "node_modules")
@@ -232,6 +233,20 @@ def is_refusal(text: str) -> bool:
     return bool(norm) and norm == target
 
 
+def validated_citations(text: str, notes: list[dict]) -> list[str]:
+    """Return cited selected-source links, or an empty list on any mismatch.
+
+    This is deliberately mechanical: it proves that at least one exact link was
+    copied from the selected notes. It does not prove that the prose is entailed
+    by the cited note.
+    """
+    allowed = [note["link"] for note in notes]
+    found = set(WIKILINK_RE.findall(text))
+    if not found or not found.issubset(set(allowed)):
+        return []
+    return [link for link in allowed if link in found]
+
+
 def run_llm(prompt: str, *, command: str | None = None, timeout_s: int = 120) -> str | None:
     """Run the configured LLM command. If the command contains '{prompt}' the
     prompt is substituted as an argument, otherwise it is piped via stdin.
@@ -301,10 +316,24 @@ def ask(
         result["sources"] = []
         result["reason"] = "no-llm"
         return result
-    refused = is_refusal(text)
-    result["answer"] = REFUSAL if refused else text
-    result["grounded"] = not refused
-    result["sources"] = [] if refused else [n["link"] for n in notes]
+    # A model may append a selected-source citation to the mandated fixed
+    # refusal. Strip links before canonical refusal detection so that output is
+    # still represented as an abstention rather than a cited answer.
+    refusal_candidate = WIKILINK_RE.sub("", text).strip()
+    refused = is_refusal(refusal_candidate)
+    citations = [] if refused else validated_citations(text, notes)
+    if refused or not citations:
+        result["answer"] = REFUSAL
+        result["grounded"] = False
+        result["sources"] = []
+        if not refused:
+            result["reason"] = "citation-validation-failed"
+    else:
+        result["answer"] = text
+        # Backward-compatible field: this means selected-source citation
+        # validation passed, not that semantic entailment was proven.
+        result["grounded"] = True
+        result["sources"] = citations
     return result
 
 
@@ -340,7 +369,7 @@ def format_result(result: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Ask your Obsidian vault, get cited answers, never hallucinate.",
+        description="Ask your Obsidian vault with fail-closed citation validation.",
     )
     parser.add_argument("question", nargs="*", help="your question")
     parser.add_argument(

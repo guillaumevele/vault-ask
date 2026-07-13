@@ -5,12 +5,12 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-zero-success.svg)](pyproject.toml)
 
-**Ask your Obsidian vault. Get cited answers. Never hallucinate.**
+**Ask your Obsidian vault with fail-closed citation validation.**
 
-A tiny (~300-line, dependency-free) grounded question-answering tool over a folder
-of Markdown notes. It finds the relevant notes, asks *your* LLM to answer **only**
-from them, forces a `[[wikilink]]` citation on every claim, and **refuses instead
-of guessing** when the answer isn't in your vault.
+A small, dependency-free question-answering tool over a folder of Markdown notes.
+It finds relevant notes, asks *your* LLM to answer only from those excerpts, and
+fails closed unless the output contains an exact `[[wikilink]]` copied from the
+selected source set.
 
 ```console
 $ vault-ask "what did I decide about the pricing model?"
@@ -24,7 +24,8 @@ Notes consulted:
 - [[Meetings/2026-01-pricing-review|2026-01-pricing-review]]
 ```
 
-Ask something that isn't in your notes and it won't make anything up:
+When the model emits the fixed refusal, returns no citation, or cites an
+unselected note, the validator returns the canonical refusal instead:
 
 ```console
 $ vault-ask "what is my bank account number?"
@@ -35,12 +36,10 @@ No note in the vault answers this question.
 
 ## Why
 
-A second brain is only useful if knowledge comes *back out*. Most "chat with your
-notes" tools either need a vector database and an indexing pipeline, or happily
-hallucinate plausible answers — a dealbreaker when your notes are medical, legal,
-or financial. `vault-ask` is the opposite: zero index, zero database, and a hard
-refusal guarantee. It runs `ripgrep` over your vault, ranks notes by term rarity
-(TF-IDF), and hands the best excerpts to whatever LLM you already use.
+A second brain is only useful if knowledge comes *back out*. Many "chat with your
+notes" tools require a vector database and an indexing pipeline. `vault-ask`
+instead uses no index or database: it runs `ripgrep` over your vault, ranks notes
+by term rarity, and hands focused excerpts to whatever LLM you already use.
 
 ## How it works
 
@@ -50,11 +49,20 @@ refusal guarantee. It runs `ripgrep` over your vault, ranks notes by term rarity
    appears in hundreds of notes. No embeddings, no index, no warm-up.
 3. **Focused excerpts** — only the headings and matching lines of the top notes
    are sent to the model (notes can be long).
-4. **Grounded prompt** — the model must cite each claim as a `[[link]]`, must not
-   add outside knowledge, and must reply with a fixed refusal sentence if the
-   excerpts don't answer the question.
-5. **Robust refusal check** — a refusal (even reworded by the model) is never
-   dressed up as a sourced answer; its citations are stripped.
+4. **Constrained prompt** — the model is instructed to cite its claims, avoid
+   outside knowledge, and emit a fixed refusal when evidence is insufficient.
+5. **Fail-closed output check** — a non-refusal answer is accepted only when it
+   contains at least one exact citation from the selected notes. Unknown or
+   missing citations produce the fixed refusal.
+
+This is a mechanical provenance check, not semantic entailment verification. A
+valid citation proves which selected note was referenced; it does not prove that
+the note supports every sentence in the answer.
+
+In JSON output, the backward-compatible `grounded` field now means that exact
+selected-source citation validation passed. It does not mean semantic entailment
+was evaluated. Arbitrary paraphrases of refusal cannot be detected mechanically
+when they also contain a valid selected-source citation.
 
 Nothing leaves your machine except what your own LLM command chooses to send.
 
@@ -131,13 +139,14 @@ vault-ask --sources-only "pricing model"
 ## What it's good at — and what it isn't
 
 **Good at:** factual lookups where the words of your question point at a note —
-decisions, numbers, names, "what did I say about …". It's fast and it never lies.
+decisions, numbers, names, "what did I say about …" — with selected-source
+citation validation and explicit abstention states.
 
 **Not good at:** abstract questions whose vocabulary differs from your notes (you
-ask "my funding strategy", the note says "tax credit"). That's the inherent limit
-of keyword retrieval — proper semantic recall needs embeddings, which this tool
-deliberately avoids to stay zero-dependency and zero-index. When it can't match,
-it refuses honestly rather than guessing.
+ask "my funding strategy", the note says "tax credit"). Keyword retrieval can
+miss semantically related notes, and an allowed citation can still accompany an
+unsupported claim. Semantic recall and entailment verification are outside this
+zero-dependency tool's current scope.
 
 ## Tests
 
