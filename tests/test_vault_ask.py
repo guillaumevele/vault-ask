@@ -54,6 +54,27 @@ class TestPromptGuardrails(unittest.TestCase):
         self.assertIn("Use ONLY the note excerpts", prompt)
         self.assertIn("Price set to 49 EUR", prompt)
 
+    def test_validated_citations_accepts_only_selected_sources(self):
+        notes = [
+            {"link": "[[Decisions/Pricing|Pricing]]"},
+            {"link": "[[Meetings/Review|Review]]"},
+        ]
+        answer = "The price is 49 EUR [[Decisions/Pricing|Pricing]]."
+        self.assertEqual(
+            vault_ask.validated_citations(answer, notes),
+            ["[[Decisions/Pricing|Pricing]]"],
+        )
+
+    def test_validated_citations_rejects_unknown_source(self):
+        notes = [{"link": "[[Decisions/Pricing|Pricing]]"}]
+        answer = "The price is 999 EUR [[Unknown|Unknown]]."
+        self.assertEqual(vault_ask.validated_citations(answer, notes), [])
+
+    def test_validated_citations_rejects_mixed_allowed_and_unknown_sources(self):
+        notes = [{"link": "[[Decisions/Pricing|Pricing]]"}]
+        answer = "Price [[Decisions/Pricing|Pricing]] [[Unknown|Unknown]]."
+        self.assertEqual(vault_ask.validated_citations(answer, notes), [])
+
 
 class TestCandidateSelection(unittest.TestCase):
     def setUp(self):
@@ -124,6 +145,50 @@ class TestAsk(unittest.TestCase):
         self.assertFalse(res["grounded"])
         self.assertEqual(res["answer"], vault_ask.REFUSAL)
         self.assertEqual(res["sources"], [])
+
+    def test_answer_without_citation_fails_closed(self):
+        (self.tmp / "note.md").write_text("# Note\nZylophone budget tool.\n", encoding="utf-8")
+        with patch.object(vault_ask, "run_llm", return_value="The price is 999 EUR."):
+            res = vault_ask.ask(self.tmp, "zylophone budget")
+        self.assertFalse(res["grounded"])
+        self.assertEqual(res["answer"], vault_ask.REFUSAL)
+        self.assertEqual(res["sources"], [])
+        self.assertEqual(res["reason"], "citation-validation-failed")
+
+    def test_unknown_citation_fails_closed(self):
+        (self.tmp / "note.md").write_text("# Note\nZylophone budget tool.\n", encoding="utf-8")
+        answer = "The tool is Zylophone [[Unknown|Unknown]]."
+        with patch.object(vault_ask, "run_llm", return_value=answer):
+            res = vault_ask.ask(self.tmp, "zylophone budget")
+        self.assertFalse(res["grounded"])
+        self.assertEqual(res["answer"], vault_ask.REFUSAL)
+        self.assertEqual(res["sources"], [])
+
+    def test_reworded_refusal_without_citation_fails_closed(self):
+        (self.tmp / "note.md").write_text("# Note\nZylophone budget tool.\n", encoding="utf-8")
+        with patch.object(vault_ask, "run_llm", return_value="I cannot answer from these notes."):
+            res = vault_ask.ask(self.tmp, "zylophone budget")
+        self.assertFalse(res["grounded"])
+        self.assertEqual(res["answer"], vault_ask.REFUSAL)
+        self.assertEqual(res["reason"], "citation-validation-failed")
+
+    def test_fixed_refusal_with_selected_citation_is_canonicalized(self):
+        (self.tmp / "note.md").write_text("# Note\nZylophone budget tool.\n", encoding="utf-8")
+        answer = f"{vault_ask.REFUSAL} [[note|note]]"
+        with patch.object(vault_ask, "run_llm", return_value=answer):
+            res = vault_ask.ask(self.tmp, "zylophone budget")
+        self.assertFalse(res["grounded"])
+        self.assertEqual(res["answer"], vault_ask.REFUSAL)
+        self.assertEqual(res["sources"], [])
+
+    def test_sources_list_contains_only_cited_selected_notes(self):
+        (self.tmp / "alpha.md").write_text("# Alpha\nZylophone budget tool.\n", encoding="utf-8")
+        (self.tmp / "beta.md").write_text("# Beta\nZylophone budget review.\n", encoding="utf-8")
+        answer = "The tool is Zylophone [[alpha|alpha]]."
+        with patch.object(vault_ask, "run_llm", return_value=answer):
+            res = vault_ask.ask(self.tmp, "zylophone budget")
+        self.assertTrue(res["grounded"])
+        self.assertEqual(res["sources"], ["[[alpha|alpha]]"])
 
     def test_no_llm_returns_candidates_not_hallucination(self):
         (self.tmp / "note.md").write_text("# Note\nZylophone budget tool.\n", encoding="utf-8")

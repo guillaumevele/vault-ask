@@ -8,7 +8,7 @@ dependency-free — please keep it that way.
 - **Zero runtime dependencies** beyond the Python standard library and `ripgrep`.
   No vector database, no embedding model, no network calls of our own (only your
   configured LLM command talks to the outside world).
-- **Never fabricate.** The refusal guarantee is the core promise. Any change to
+- **Fail closed.** Selected-source citation validation is the core promise. Any change to
   retrieval or prompting must preserve: mandatory `[[citations]]`, and an honest
   refusal when the excerpts don't support an answer.
 
