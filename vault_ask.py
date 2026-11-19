@@ -39,7 +39,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 REFUSAL = "No note in the vault answers this question."
 WIKILINK_RE = re.compile(r"\[\[[^\[\]\n]+\]\]")
