@@ -250,22 +250,28 @@ def validated_citations(text: str, notes: list[dict]) -> list[str]:
 def run_llm(prompt: str, *, command: str | None = None, timeout_s: int = 120) -> str | None:
     """Run the configured LLM command. If the command contains '{prompt}' the
     prompt is substituted as an argument, otherwise it is piped via stdin.
+    The command is never run through a shell: pipes, redirections and variable
+    expansion in the template are not interpreted (wrap them in `sh -c` yourself
+    and read the prompt from stdin if you need them).
     Returns the text answer, or None on any failure (caller falls back)."""
     command = command or os.environ.get("VAULT_ASK_LLM", "").strip()
     if not command:
         return None
     try:
         if "{prompt}" in command:
-            full = command.replace("{prompt}", shlex.quote(prompt))
+            # No shell: the template is split into argv first, then the prompt is
+            # substituted inside each argument. Note text can never be parsed as
+            # shell syntax, even when the template quotes the placeholder.
+            argv = [part.replace("{prompt}", prompt) for part in shlex.split(command)]
             proc = subprocess.run(
-                full, shell=True, capture_output=True, text=True, timeout=timeout_s,
+                argv, capture_output=True, text=True, timeout=timeout_s,
             )
         else:
             proc = subprocess.run(
                 shlex.split(command), input=prompt,
                 capture_output=True, text=True, timeout=timeout_s,
             )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
         return None
@@ -380,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=5, help="max notes to consult")
     parser.add_argument(
         "--llm", default=None,
-        help="LLM command (default: $VAULT_ASK_LLM). Use '{prompt}' for arg-style.",
+        help="LLM command (default: $VAULT_ASK_LLM). Use {prompt} for arg-style (no shell is involved).",
     )
     parser.add_argument(
         "--sources-only", action="store_true",
