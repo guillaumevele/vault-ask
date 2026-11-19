@@ -215,5 +215,44 @@ class TestAsk(unittest.TestCase):
         self.assertEqual(res["reason"], "ripgrep-not-found")
 
 
+class TestRunLlmNoShell(unittest.TestCase):
+    """The LLM command template must never be interpreted by a shell: the prompt
+    carries note text, which is untrusted."""
+
+    PAYLOAD = "note text; touch {marker}"
+
+    def _run(self, template: str) -> tuple[bool, "str | None"]:
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "PWNED"
+            prompt = self.PAYLOAD.format(marker=marker)
+            out = vault_ask.run_llm(prompt, command=template)
+            return marker.exists(), out
+
+    def test_quoted_placeholder_cannot_inject(self):
+        created, out = self._run("echo '{prompt}'")
+        self.assertFalse(created)
+        self.assertIn("; touch ", out)
+
+    def test_bare_placeholder_cannot_inject(self):
+        created, out = self._run("echo {prompt}")
+        self.assertFalse(created)
+        self.assertIn("; touch ", out)
+
+    def test_placeholder_inside_a_larger_argument(self):
+        created, out = self._run("echo --prompt={prompt}")
+        self.assertFalse(created)
+        self.assertTrue(out.startswith("--prompt=note text; touch "))
+
+    def test_command_substitution_is_not_expanded(self):
+        out = vault_ask.run_llm("$(echo injected) `echo injected`", command="echo {prompt}")
+        self.assertEqual(out, "$(echo injected) `echo injected`")
+
+    def test_unbalanced_template_fails_closed(self):
+        self.assertIsNone(vault_ask.run_llm("x", command="echo '{prompt}"))
+
+    def test_stdin_mode_still_works(self):
+        self.assertEqual(vault_ask.run_llm("hello", command="cat"), "hello")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
